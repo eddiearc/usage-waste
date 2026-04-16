@@ -6,28 +6,27 @@ import os from "node:os";
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 
+// ─── Recursion guard ─────────────────────────────────────────────────────────
+// The spawned `claude --bare` skips hooks, but as a belt-and-suspenders
+// measure we also set USAGE_WASTE_RUNNING=1 on the child process.
+if (process.env.USAGE_WASTE_RUNNING === "1") {
+  process.exit(0);
+}
+
+// ─── Required env vars ───────────────────────────────────────────────────────
+const API_KEY = process.env.USAGE_WASTE_API_KEY;
+if (!API_KEY) {
+  // Not configured — silently skip
+  process.exit(0);
+}
+
+const MODEL = process.env.USAGE_WASTE_MODEL || "sonnet";
+const BASE_URL = process.env.USAGE_WASTE_BASE_URL || "";
+
 // ─── Paths ───────────────────────────────────────────────────────────────────
 const CONFIG_DIR = path.join(os.homedir(), ".config", "usage-waste");
-const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
 const SESSIONS_DIR = path.join(CONFIG_DIR, "sessions");
-const DEFAULT_STATS_FILE = path.join(CONFIG_DIR, "stats.json");
-
-// ─── Default config ──────────────────────────────────────────────────────────
-const DEFAULT_CONFIG = {
-  enabled: true,
-  backend: "codex",
-  codex: {
-    apiKey: "",
-    provider: "openai",
-    model: "o3-mini",
-  },
-  claude: {
-    apiKey: "",
-    baseUrl: "",
-    model: "sonnet",
-  },
-  statsFile: DEFAULT_STATS_FILE,
-};
+const STATS_FILE = path.join(CONFIG_DIR, "stats.json");
 
 // ─── stdin ───────────────────────────────────────────────────────────────────
 function readHookInput() {
@@ -40,184 +39,60 @@ function readHookInput() {
   }
 }
 
-// ─── Config ──────────────────────────────────────────────────────────────────
-function loadConfig() {
-  let config = { ...DEFAULT_CONFIG };
-
-  try {
-    if (fs.existsSync(CONFIG_FILE)) {
-      const fileConfig = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
-      config = {
-        ...config,
-        ...fileConfig,
-        codex: { ...config.codex, ...fileConfig.codex },
-        claude: { ...config.claude, ...fileConfig.claude },
-      };
-    }
-  } catch {
-    // Config file unreadable, use defaults
-  }
-
-  const env = process.env;
-  if (env.USAGE_WASTE_ENABLED !== undefined) {
-    config.enabled = env.USAGE_WASTE_ENABLED !== "false" && env.USAGE_WASTE_ENABLED !== "0";
-  }
-  if (env.USAGE_WASTE_BACKEND) config.backend = env.USAGE_WASTE_BACKEND;
-  if (env.USAGE_WASTE_CODEX_API_KEY) config.codex.apiKey = env.USAGE_WASTE_CODEX_API_KEY;
-  if (env.USAGE_WASTE_CODEX_PROVIDER) config.codex.provider = env.USAGE_WASTE_CODEX_PROVIDER;
-  if (env.USAGE_WASTE_CODEX_MODEL) config.codex.model = env.USAGE_WASTE_CODEX_MODEL;
-  if (env.USAGE_WASTE_CLAUDE_API_KEY) config.claude.apiKey = env.USAGE_WASTE_CLAUDE_API_KEY;
-  if (env.USAGE_WASTE_CLAUDE_BASE_URL) config.claude.baseUrl = env.USAGE_WASTE_CLAUDE_BASE_URL;
-  if (env.USAGE_WASTE_CLAUDE_MODEL) config.claude.model = env.USAGE_WASTE_CLAUDE_MODEL;
-
-  if (config.statsFile && config.statsFile.startsWith("~")) {
-    config.statsFile = config.statsFile.replace(/^~/, os.homedir());
-  }
-  if (!config.statsFile) {
-    config.statsFile = DEFAULT_STATS_FILE;
-  }
-
-  return config;
-}
-
 // ─── Session tracking ────────────────────────────────────────────────────────
-// Maps main session_id → waste session UUID so all prompts within
-// the same main session share a single Claude/Codex conversation.
-
-function ensureSessionsDir() {
-  if (!fs.existsSync(SESSIONS_DIR)) {
-    fs.mkdirSync(SESSIONS_DIR, { recursive: true });
-  }
-}
-
-function sessionFilePath(mainSessionId, backend) {
-  return path.join(SESSIONS_DIR, `${mainSessionId}.${backend}.json`);
-}
-
-/**
- * Get or create a waste session for the given main session.
- * Returns { wasteSessionId, isFirst }
- */
-function getOrCreateWasteSession(mainSessionId, backend) {
+function getOrCreateWasteSession(mainSessionId) {
   if (!mainSessionId) {
-    // No main session ID — generate a random one, always "first"
     return { wasteSessionId: crypto.randomUUID(), isFirst: true };
   }
 
-  ensureSessionsDir();
-  const filePath = sessionFilePath(mainSessionId, backend);
+  if (!fs.existsSync(SESSIONS_DIR)) {
+    fs.mkdirSync(SESSIONS_DIR, { recursive: true });
+  }
+
+  const filePath = path.join(SESSIONS_DIR, `${mainSessionId}.json`);
 
   try {
     if (fs.existsSync(filePath)) {
       const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
       return { wasteSessionId: data.wasteSessionId, isFirst: false };
     }
-  } catch {
-    // Corrupted — recreate
-  }
+  } catch { /* corrupted — recreate */ }
 
-  // First prompt in this main session — create a new waste session
   const wasteSessionId = crypto.randomUUID();
   try {
-    fs.writeFileSync(
-      filePath,
-      JSON.stringify({ wasteSessionId, mainSessionId, backend, createdAt: new Date().toISOString() }, null, 2) + "\n",
-      "utf8"
-    );
-  } catch {
-    // Write failure — proceed anyway
-  }
+    fs.writeFileSync(filePath, JSON.stringify({ wasteSessionId, mainSessionId, createdAt: new Date().toISOString() }, null, 2) + "\n");
+  } catch { /* best effort */ }
 
   return { wasteSessionId, isFirst: true };
 }
 
-// ─── Spawn: Codex backend ────────────────────────────────────────────────────
-// Codex CLI does not support specifying a session ID upfront.
-// We use a runner script that:
-//   1st call: `codex exec` → captures session ID from JSONL → saves to file
-//   Nth call: `codex exec resume <id>` to continue the same conversation
-function spawnCodex(prompt, config, mainSessionId) {
-  const { apiKey, provider, model } = config.codex;
-  const envOverrides = { ...process.env };
-  if (apiKey) envOverrides.OPENAI_API_KEY = apiKey;
-
-  // Check if we already have a codex waste session
-  const sessionFile = mainSessionId
-    ? sessionFilePath(mainSessionId, "codex")
-    : null;
-
-  let existingCodexSessionId = null;
-  if (sessionFile) {
-    try {
-      if (fs.existsSync(sessionFile)) {
-        const data = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
-        existingCodexSessionId = data.codexSessionId || null;
-      }
-    } catch { /* ignore */ }
-  }
-
-  if (existingCodexSessionId) {
-    // Resume existing codex session
-    const args = ["exec", "resume", existingCodexSessionId, "--full-auto"];
-    if (model) args.push("-m", model);
-    args.push(prompt);
-
-    const child = spawn("codex", args, {
-      detached: true,
-      stdio: "ignore",
-      env: envOverrides,
-    });
-    child.unref();
-  } else {
-    // First call — use runner to capture session ID
-    const runnerPath = path.join(path.dirname(new URL(import.meta.url).pathname), "codex-session-runner.mjs");
-    const args = [runnerPath];
-    if (sessionFile) args.push("--session-file", sessionFile);
-    if (provider) args.push("--provider", provider);
-    if (model) args.push("--model", model);
-    args.push("--", prompt);
-
-    const child = spawn(process.execPath, args, {
-      detached: true,
-      stdio: "ignore",
-      env: envOverrides,
-    });
-    child.unref();
-  }
-}
-
-// ─── Spawn: Claude backend ───────────────────────────────────────────────────
-// Claude CLI supports `--session-id <uuid>` (first call) and
-// `--resume <uuid>` (subsequent calls) — perfect session continuation.
-function spawnClaude(prompt, config, mainSessionId) {
-  const { apiKey, baseUrl, model } = config.claude;
-  const { wasteSessionId, isFirst } = getOrCreateWasteSession(mainSessionId, "claude");
+// ─── Spawn claude ────────────────────────────────────────────────────────────
+function spawnClaude(prompt, mainSessionId) {
+  const { wasteSessionId, isFirst } = getOrCreateWasteSession(mainSessionId);
 
   const args = ["--bare", "-p"];
-  if (model) args.push("--model", model);
+  args.push("--model", MODEL);
 
   if (isFirst) {
-    // First prompt — create session with known UUID
     args.push("--session-id", wasteSessionId);
   } else {
-    // Subsequent prompts — resume the same session
     args.push("--resume", wasteSessionId);
   }
 
-  if (baseUrl) {
-    const settings = JSON.stringify({
-      provider: { baseUrl, ...(apiKey ? { apiKey } : {}) },
-    });
-    args.push("--settings", settings);
+  if (BASE_URL) {
+    args.push("--settings", JSON.stringify({
+      provider: { baseUrl: BASE_URL, apiKey: API_KEY },
+    }));
   }
-
-  const envOverrides = {};
-  if (apiKey) envOverrides.ANTHROPIC_API_KEY = apiKey;
 
   const child = spawn("claude", args, {
     detached: true,
     stdio: ["pipe", "ignore", "ignore"],
-    env: { ...process.env, ...envOverrides },
+    env: {
+      ...process.env,
+      ANTHROPIC_API_KEY: API_KEY,
+      USAGE_WASTE_RUNNING: "1",  // recursion guard
+    },
   });
 
   child.stdin.write(prompt);
@@ -226,39 +101,24 @@ function spawnClaude(prompt, config, mainSessionId) {
 }
 
 // ─── Stats ───────────────────────────────────────────────────────────────────
-function updateStats(config, sessionId) {
+function updateStats(sessionId) {
   try {
-    const statsFile = config.statsFile;
-    const statsDir = path.dirname(statsFile);
-    if (!fs.existsSync(statsDir)) {
-      fs.mkdirSync(statsDir, { recursive: true });
+    if (!fs.existsSync(CONFIG_DIR)) {
+      fs.mkdirSync(CONFIG_DIR, { recursive: true });
     }
 
-    let stats = {
-      totalCalls: 0,
-      byBackend: {},
-      byModel: {},
-      byDate: {},
-      lastCall: null,
-      recentSessions: [],
-    };
-
-    if (fs.existsSync(statsFile)) {
-      try {
-        stats = { ...stats, ...JSON.parse(fs.readFileSync(statsFile, "utf8")) };
-      } catch {
-        // Corrupted stats, reset
+    let stats = { totalCalls: 0, byModel: {}, byDate: {}, lastCall: null, recentSessions: [] };
+    try {
+      if (fs.existsSync(STATS_FILE)) {
+        stats = { ...stats, ...JSON.parse(fs.readFileSync(STATS_FILE, "utf8")) };
       }
-    }
+    } catch { /* reset */ }
 
     const now = new Date();
     const dateKey = now.toISOString().slice(0, 10);
-    const backend = config.backend;
-    const model = backend === "codex" ? config.codex.model : config.claude.model;
 
     stats.totalCalls += 1;
-    stats.byBackend[backend] = (stats.byBackend[backend] || 0) + 1;
-    stats.byModel[model] = (stats.byModel[model] || 0) + 1;
+    stats.byModel[MODEL] = (stats.byModel[MODEL] || 0) + 1;
     stats.byDate[dateKey] = (stats.byDate[dateKey] || 0) + 1;
     stats.lastCall = now.toISOString();
 
@@ -269,41 +129,14 @@ function updateStats(config, sessionId) {
       }
     }
 
-    fs.writeFileSync(statsFile, JSON.stringify(stats, null, 2) + "\n", "utf8");
-  } catch {
-    // Stats update failure must not block the main flow
-  }
+    fs.writeFileSync(STATS_FILE, JSON.stringify(stats, null, 2) + "\n");
+  } catch { /* best effort */ }
 }
 
 // ─── Main ────────────────────────────────────────────────────────────────────
-function main() {
-  const input = readHookInput();
-  const userPrompt = input.user_prompt;
-  if (!userPrompt || !userPrompt.trim()) {
-    return;
-  }
+const input = readHookInput();
+const prompt = input.user_prompt?.trim();
+if (!prompt) process.exit(0);
 
-  const config = loadConfig();
-  if (!config.enabled) {
-    return;
-  }
-
-  const backend = config.backend;
-  const backendConfig = backend === "codex" ? config.codex : config.claude;
-
-  if (!backendConfig.apiKey) {
-    return;
-  }
-
-  const mainSessionId = input.session_id || null;
-
-  if (backend === "codex") {
-    spawnCodex(userPrompt.trim(), config, mainSessionId);
-  } else {
-    spawnClaude(userPrompt.trim(), config, mainSessionId);
-  }
-
-  updateStats(config, mainSessionId);
-}
-
-main();
+spawnClaude(prompt, input.session_id || null);
+updateStats(input.session_id || null);
