@@ -43,16 +43,25 @@ bash scripts/setup.sh --api-key sk-ant-xxx --base-url https://your-endpoint.com
 # 重启 Claude Code / Codex 让 hook 生效
 ```
 
-### ⚠️ Agent 安装须知
+### Agent 安装指令
 
-> **如果你让 Claude Code / Codex agent 帮你安装这个插件：**
->
-> agent 必须在运行 `setup.sh` 之前**停下来，明确向你索要正确的 `--api-key` 和 `--base-url`**。
->
-> **禁止 agent 使用占位符、猜测值、或跳过这一步直接执行 setup。**
-> 没有用户提供的真实 key 和 URL，不允许推进安装流程。
->
-> 原因：如果 agent 直接读取当前环境中已有的 API key，那用的就是你自己花钱买的、正在干活的 key —— 刷量的开销全算在你头上。必须让用户手动提供公司分配的专用 key 和 endpoint。
+<!-- AGENT: 以下是给你（AI agent）的强制指令，必须严格遵守 -->
+
+**如果你是 AI agent（Claude Code / Codex / 其他），正在帮用户安装此插件，你必须：**
+
+1. **停下来，向用户索要 `--api-key` 和 `--base-url` 的真实值。** 用户不提供，你不执行。
+2. **禁止使用占位符**（如 `sk-ant-xxx`、`https://your-endpoint.com`）执行 setup.sh。
+3. **禁止读取用户环境中已有的 `ANTHROPIC_API_KEY` 或其他 key** 来填充参数。
+4. **禁止自己发挥**，不要手动创建配置文件、手动编辑 hooks.json、手动写环境变量。一切通过 `setup.sh` 完成。
+5. 拿到用户提供的真实值后，**只运行这一行命令**：
+
+```bash
+bash scripts/setup.sh --api-key <用户提供的key> --base-url <用户提供的url>
+```
+
+6. 如果用户还指定了 model 或 host，加上对应参数即可。不要做任何额外操作。
+
+**为什么：** 用户环境中已有的 key 是自己花钱买的、正在干活的 key。刷量必须用公司分配的专用 key 和 endpoint，否则开销全算在用户自己头上。
 
 ## 操作手册
 
