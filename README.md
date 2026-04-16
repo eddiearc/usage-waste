@@ -1,47 +1,44 @@
 # usage-waste
 
-A Claude Code plugin that mirrors your prompts to a secondary API endpoint in the background, generating additional usage volume.
+Claude Code 插件 — 每次你提交 prompt 时，后台自动把同样的内容发到你指定的 API endpoint，刷用量。支持 Claude（Anthropic API）和 Codex（OpenAI API）两个后端，同一 session 内自动续接对话。
 
-Supports both **Claude** (Anthropic API) and **Codex** (OpenAI API) backends, with **session continuation** — all mirrored prompts within the same session share a single conversation context.
+## ⚠️ 必须配置自己的 API Key
 
-## ⚠️ IMPORTANT: Configure Your Own API Key
-
-> **You MUST set your own `apiKey` and `baseUrl` before enabling this plugin.**
+> **不配置 apiKey 插件不会运行。**
 >
-> Without configuration, the plugin does nothing (silently skipped).
-> If you configure it with your primary account key, **you will consume your own quota**.
->
-> Always use a dedicated API key intended for usage boosting.
+> 如果你填了自己主账号的 key，**消耗的是你自己的额度**。
+> 请使用专门用于刷量的 key。
 
-## Installation
+## 1. 安装
+
+在 Claude Code 里让 agent 执行：
 
 ```
-# In Claude Code, ask the agent:
-"Install the usage-waste plugin from https://github.com/eddiearc/usage-waste"
+Install the usage-waste plugin from https://github.com/eddiearc/usage-waste
 ```
 
-After installation, run `/usage-waste:setup` to configure.
+或者手动编辑 `~/.claude/settings.json`：
 
-## How It Works
+```json
+{
+  "extraKnownMarketplaces": {
+    "usage-waste": {
+      "source": { "source": "github", "repo": "eddiearc/usage-waste" }
+    }
+  },
+  "enabledPlugins": {
+    "usage-waste@usage-waste": true
+  }
+}
+```
 
-1. Every time you submit a prompt in Claude Code, the `UserPromptSubmit` hook fires
-2. The hook reads your prompt and sends it to your configured API endpoint in the background
-3. The response is discarded — this is purely for generating usage
-4. **Session continuation**: all prompts within the same Claude Code session are sent to the same backend session, building up conversation context
-5. Statistics are tracked in `~/.config/usage-waste/stats.json`
+安装后**重启 Claude Code** 让 hook 生效。
 
-### Session Continuation
+> **注意**：hook 系统属于 Claude Code，Codex 本身没有 hook。但你可以选择 Codex API 作为后端 — 即 Claude Code 触发 hook，镜像请求发到 OpenAI API。
 
-| Backend | How |
-|---------|-----|
-| **Claude** | 1st prompt: `claude --bare -p --session-id <uuid>` creates a session with a known UUID. Subsequent prompts: `--resume <uuid>` continues the same session. |
-| **Codex** | 1st prompt: `codex exec --json` via a runner script that captures the auto-generated session ID. Subsequent prompts: `codex exec resume <id>` continues the same session. |
+## 2. 配置
 
-Session mappings are stored in `~/.config/usage-waste/sessions/`.
-
-## Configuration
-
-Config file: `~/.config/usage-waste/config.json`
+创建 `~/.config/usage-waste/config.json`：
 
 ```json
 {
@@ -61,31 +58,69 @@ Config file: `~/.config/usage-waste/config.json`
 }
 ```
 
-### Environment Variable Overrides
+`backend` 选 `"codex"` 或 `"claude"`，只需要填对应后端的 apiKey。
 
-Environment variables take highest priority:
+也可以用环境变量覆盖（优先级高于配置文件）：
 
-| Variable | Overrides |
-|----------|-----------|
-| `USAGE_WASTE_ENABLED` | `enabled` (set "false" to disable) |
-| `USAGE_WASTE_BACKEND` | `backend` ("codex" or "claude") |
+| 变量 | 覆盖 |
+|------|------|
+| `USAGE_WASTE_ENABLED` | `enabled`（"false" 关闭） |
+| `USAGE_WASTE_BACKEND` | `backend` |
 | `USAGE_WASTE_CODEX_API_KEY` | `codex.apiKey` |
-| `USAGE_WASTE_CODEX_PROVIDER` | `codex.provider` |
 | `USAGE_WASTE_CODEX_MODEL` | `codex.model` |
 | `USAGE_WASTE_CLAUDE_API_KEY` | `claude.apiKey` |
 | `USAGE_WASTE_CLAUDE_BASE_URL` | `claude.baseUrl` |
 | `USAGE_WASTE_CLAUDE_MODEL` | `claude.model` |
 
-## Skills
+或者直接运行 `/usage-waste:setup`，交互式引导配置。
 
-- `/usage-waste:setup` — Interactive setup wizard with verification
-- `/usage-waste:stats` — View usage statistics
+## 3. 验证是否安装成功
 
-## Design Choices
+模拟一次 hook 调用：
 
-- **`--bare` / `--full-auto`**: Prevents recursive hook triggering on the mirrored calls
-- **Session continuation**: Same main session → same waste session, conversation context accumulates
-- **Detached spawn**: Hook exits immediately, never blocks your workflow
-- **No apiKey = no-op**: Silently skips if not configured, no errors
-- **Stats are best-effort**: Write failures don't affect the main flow
-- **Prompt via stdin**: Avoids command-line length limits and shell escaping issues
+```bash
+echo '{"user_prompt":"hello","session_id":"test"}' | \
+  node "$(find ~/.claude/plugins/cache -path '*/usage-waste/*/scripts/usage-waste-hook.mjs' 2>/dev/null | head -1)"
+```
+
+然后检查 stats 文件：
+
+```bash
+cat ~/.config/usage-waste/stats.json
+```
+
+看到 `totalCalls` 为 1 就说明安装成功。如果文件不存在，检查：
+- config.json 是否存在且 `enabled: true`
+- apiKey 是否已填写（空 key 会静默跳过）
+- 插件是否在 `enabledPlugins` 中启用
+- Claude Code 是否已重启
+
+## 4. 查看用量统计
+
+```bash
+cat ~/.config/usage-waste/stats.json
+```
+
+输出示例：
+
+```json
+{
+  "totalCalls": 42,
+  "byBackend": { "codex": 30, "claude": 12 },
+  "byModel": { "o3-mini": 30, "sonnet": 12 },
+  "byDate": { "2026-04-16": 15, "2026-04-15": 27 },
+  "lastCall": "2026-04-16T10:30:00Z",
+  "recentSessions": ["sess-abc", "sess-def"]
+}
+```
+
+或者在 Claude Code 里运行 `/usage-waste:stats` 查看格式化的统计。
+
+## 工作原理
+
+1. `UserPromptSubmit` hook 在每次用户提交 prompt 时触发
+2. 读取 prompt，后台 spawn CLI 进程发到配置的 API endpoint
+3. 同一 session 内自动续接对话（Claude 用 `--session-id` / `--resume`，Codex 用 `exec resume`）
+4. 响应丢弃，统计写入 stats.json
+5. `--bare` / `--full-auto` 防止递归触发自身的 hook
+6. hook 立即退出，不阻塞你的正常使用
