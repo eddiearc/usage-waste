@@ -3,7 +3,7 @@
 /**
  * Background runner — spawned detached by the hook.
  * Runs `claude --bare -p --output-format json`, captures token usage
- * and success/failure, then APPENDS one line to stats.jsonl.
+ * and success/failure, then APPENDS one line to logs/<date>.jsonl.
  *
  * Usage (called by hook, not directly):
  *   node usage-waste-runner.mjs <stats-dir> <session-id> <model> <args...>
@@ -34,27 +34,56 @@ const child = execFile("claude", allArgs, {
 }, (error, stdout, stderr) => {
   const success = !error;
 
-  // Parse token usage from JSON output
+  // Parse JSON result from stdout
   let usage = null;
   let costUsd = 0;
+  let apiError = null;
+
   if (stdout) {
     try {
       const result = JSON.parse(stdout);
       usage = result.usage || null;
       costUsd = result.total_cost_usd || 0;
+
+      // Extract structured error info from claude JSON response
+      if (result.is_error || result.api_error_status) {
+        apiError = {
+          status: result.api_error_status || null,
+          message: (result.result || "").slice(0, 300),
+        };
+      }
     } catch { /* not valid JSON */ }
   }
 
-  let errorMsg = error
-    ? (stderr || error.message || "unknown error").trim().slice(0, 500)
-    : null;
+  // Build error message: prefer structured info, fall back to stderr
+  let errorMsg = null;
+  if (!success) {
+    if (apiError) {
+      // Structured error from claude JSON output
+      errorMsg = apiError.status
+        ? `[${apiError.status}] ${apiError.message}`
+        : apiError.message;
+    } else if (stderr && stderr.trim()) {
+      errorMsg = stderr.trim().slice(0, 500);
+    } else if (error) {
+      errorMsg = (error.message || "unknown error").slice(0, 500);
+    } else {
+      errorMsg = "unknown error";
+    }
+  } else if (apiError) {
+    // claude exited 0 but response indicates error (e.g., is_error: true)
+    errorMsg = apiError.status
+      ? `[${apiError.status}] ${apiError.message}`
+      : apiError.message;
+  }
 
+  // Mask API keys in error messages
   if (errorMsg) {
     errorMsg = errorMsg.replace(/sk-ant-[A-Za-z0-9_-]+/g, "sk-ant-****");
     errorMsg = errorMsg.replace(/sk-[A-Za-z0-9_-]{10,}/g, "sk-****");
   }
 
-  appendLog(success, errorMsg, usage, costUsd);
+  appendLog(!errorMsg, errorMsg, usage, costUsd);
 });
 
 child.stdin.write(prompt);

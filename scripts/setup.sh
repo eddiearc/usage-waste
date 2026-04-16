@@ -38,11 +38,10 @@ fi
 # ─── Step 0: Validate API key and base URL ────────────────────────────────────
 echo "==> Validating API key and base URL..."
 
-VALIDATE_OUTPUT=$(echo "hi" | ANTHROPIC_API_KEY="$API_KEY" claude --bare -p \
+VALIDATE_OUTPUT=$(echo "hi" | ANTHROPIC_API_KEY="$API_KEY" ANTHROPIC_BASE_URL="$BASE_URL" claude --bare -p \
   --dangerously-skip-permissions \
   --model "${MODEL}" \
   --output-format json \
-  --settings "{\"provider\":{\"baseUrl\":\"$BASE_URL\",\"apiKey\":\"$API_KEY\"}}" \
   2>&1) || true
 
 VALIDATE_OK=false

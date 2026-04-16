@@ -18,7 +18,9 @@ const SESSIONS_DIR = path.join(CONFIG_DIR, "sessions");
 const STATUS_FILE = path.join(CONFIG_DIR, "status.json");
 const RUNNER_PATH = path.join(path.dirname(new URL(import.meta.url).pathname), "usage-waste-runner.mjs");
 
-// ─── Load config: config.json first, env vars override ──────────────────────
+// ─── Load config: config.json is source of truth ────────────────────────────
+// Priority: config.json > USAGE_WASTE_* env (not ANTHROPIC_*)
+// Parent process ANTHROPIC_* are intentionally ignored and sanitized.
 let configApiKey = "";
 let configBaseUrl = "";
 let configModel = "sonnet";
@@ -32,10 +34,10 @@ try {
   }
 } catch { /* config file unreadable */ }
 
-// Env vars override config file
-const API_KEY = process.env.USAGE_WASTE_API_KEY || configApiKey;
-const BASE_URL = process.env.USAGE_WASTE_BASE_URL || configBaseUrl;
-const MODEL = process.env.USAGE_WASTE_MODEL || configModel;
+// USAGE_WASTE_* env vars as fallback only (not ANTHROPIC_*)
+const API_KEY = configApiKey || process.env.USAGE_WASTE_API_KEY || "";
+const BASE_URL = configBaseUrl || process.env.USAGE_WASTE_BASE_URL || "";
+const MODEL = configModel || process.env.USAGE_WASTE_MODEL || "sonnet";
 
 if (!API_KEY || !BASE_URL) {
   try {
@@ -43,7 +45,7 @@ if (!API_KEY || !BASE_URL) {
     const missing = [!API_KEY && "apiKey", !BASE_URL && "baseUrl"].filter(Boolean);
     fs.writeFileSync(STATUS_FILE, JSON.stringify({
       status: "skipped",
-      skipReason: `Missing: ${missing.join(", ")} (not in config.json or env)`,
+      skipReason: `Missing: ${missing.join(", ")} (not in config.json or USAGE_WASTE_* env)`,
       lastSkipAt: new Date().toISOString(),
     }, null, 2) + "\n");
   } catch { /* best effort */ }
@@ -88,22 +90,45 @@ function getOrCreateWasteSession(mainSessionId) {
   return { wasteSessionId, isFirst: true };
 }
 
+// ─── Build sanitized env for child process ───────────────────────────────────
+// Strip all ANTHROPIC_* from parent to prevent host env from leaking into
+// the waste call. Then set exactly what we need.
+function buildCleanEnv() {
+  const env = { ...process.env };
+
+  // Remove all ANTHROPIC_* keys that could pollute the child
+  const poison = [
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_BASE_URL",
+    "ANTHROPIC_MODEL",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+  ];
+  for (const key of poison) {
+    delete env[key];
+  }
+
+  // Set exactly what the waste call needs
+  env.ANTHROPIC_API_KEY = API_KEY;
+  env.ANTHROPIC_BASE_URL = BASE_URL;
+  env.USAGE_WASTE_RUNNING = "1";
+
+  return env;
+}
+
 // ─── Spawn runner ────────────────────────────────────────────────────────────
 function spawnRunner(prompt, mainSessionId) {
   const { wasteSessionId, isFirst } = getOrCreateWasteSession(mainSessionId);
 
+  // Only use env vars + --model for config. No --settings to avoid conflicts.
   const claudeArgs = ["--bare", "-p", "--dangerously-skip-permissions", "--model", MODEL];
 
   if (isFirst) {
     claudeArgs.push("--session-id", wasteSessionId);
   } else {
     claudeArgs.push("--resume", wasteSessionId);
-  }
-
-  if (BASE_URL) {
-    claudeArgs.push("--settings", JSON.stringify({
-      provider: { baseUrl: BASE_URL, apiKey: API_KEY },
-    }));
   }
 
   // Runner args: <stats-dir> <session-id> <model> <claude-args...>
@@ -118,11 +143,7 @@ function spawnRunner(prompt, mainSessionId) {
   const child = spawn(process.execPath, runnerArgs, {
     detached: true,
     stdio: ["pipe", "ignore", "ignore"],
-    env: {
-      ...process.env,
-      ANTHROPIC_API_KEY: API_KEY,
-      USAGE_WASTE_RUNNING: "1",
-    },
+    env: buildCleanEnv(),
   });
 
   child.stdin.write(prompt);
