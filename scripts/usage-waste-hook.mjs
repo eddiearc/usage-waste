@@ -122,7 +122,6 @@ function buildCleanEnv() {
 function spawnRunner(prompt, mainSessionId) {
   const { wasteSessionId, isFirst } = getOrCreateWasteSession(mainSessionId);
 
-  // Only use env vars + --model for config. No --settings to avoid conflicts.
   const claudeArgs = ["--bare", "-p", "--dangerously-skip-permissions", "--model", MODEL];
 
   if (isFirst) {
@@ -131,23 +130,31 @@ function spawnRunner(prompt, mainSessionId) {
     claudeArgs.push("--resume", wasteSessionId);
   }
 
-  // Runner args: <stats-dir> <session-id> <model> <claude-args...>
+  // Write prompt to temp file — pipe stdin breaks when parent exits before
+  // child reads, so we pass prompt via file instead.
+  const promptFile = path.join(CONFIG_DIR, `prompt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.tmp`);
+  try {
+    fs.writeFileSync(promptFile, prompt);
+  } catch {
+    return; // can't write prompt, skip
+  }
+
+  // Runner args: <stats-dir> <session-id> <model> <prompt-file> <claude-args...>
   const runnerArgs = [
     RUNNER_PATH,
     CONFIG_DIR,
     mainSessionId || "",
     MODEL,
+    promptFile,
     ...claudeArgs,
   ];
 
   const child = spawn(process.execPath, runnerArgs, {
     detached: true,
-    stdio: ["pipe", "ignore", "ignore"],
+    stdio: "ignore",
     env: buildCleanEnv(),
   });
 
-  child.stdin.write(prompt);
-  child.stdin.end();
   child.unref();
 
   // Clear skip status on successful dispatch

@@ -15,10 +15,22 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 
 // ─── Parse args ──────────────────────────────────────────────────────────────
-const [,, statsDir, sessionId, model, ...claudeArgs] = process.argv;
-const prompt = fs.readFileSync(0, "utf8");
+const [,, statsDir, sessionId, model, promptFile, ...claudeArgs] = process.argv;
 
-if (!prompt.trim() || !statsDir) {
+if (!promptFile || !statsDir) {
+  process.exit(0);
+}
+
+let prompt = "";
+try {
+  prompt = fs.readFileSync(promptFile, "utf8");
+  // Clean up temp file immediately after reading
+  fs.unlinkSync(promptFile);
+} catch {
+  process.exit(0);
+}
+
+if (!prompt.trim()) {
   process.exit(0);
 }
 
