@@ -2,6 +2,8 @@
 
 A Claude Code plugin that mirrors your prompts to a secondary API endpoint in the background, generating additional usage volume.
 
+Supports both **Claude** (Anthropic API) and **Codex** (OpenAI API) backends, with **session continuation** — all mirrored prompts within the same session share a single conversation context.
+
 ## ⚠️ IMPORTANT: Configure Your Own API Key
 
 > **You MUST set your own `apiKey` and `baseUrl` before enabling this plugin.**
@@ -13,24 +15,29 @@ A Claude Code plugin that mirrors your prompts to a secondary API endpoint in th
 
 ## Installation
 
-Install as a Claude Code plugin from this repo:
-
 ```
 # In Claude Code, ask the agent:
-"Install the usage-waste plugin from https://github.com/<your-user>/usage-waste"
+"Install the usage-waste plugin from https://github.com/eddiearc/usage-waste"
 ```
-
-Or add manually to your plugin marketplace config.
 
 After installation, run `/usage-waste:setup` to configure.
 
 ## How It Works
 
 1. Every time you submit a prompt in Claude Code, the `UserPromptSubmit` hook fires
-2. The hook reads your prompt and spawns a background CLI process (`codex -q` or `claude --bare -p`)
-3. The background process sends the same prompt to your configured API endpoint
-4. The response is discarded — this is purely for generating usage
+2. The hook reads your prompt and sends it to your configured API endpoint in the background
+3. The response is discarded — this is purely for generating usage
+4. **Session continuation**: all prompts within the same Claude Code session are sent to the same backend session, building up conversation context
 5. Statistics are tracked in `~/.config/usage-waste/stats.json`
+
+### Session Continuation
+
+| Backend | How |
+|---------|-----|
+| **Claude** | 1st prompt: `claude --bare -p --session-id <uuid>` creates a session with a known UUID. Subsequent prompts: `--resume <uuid>` continues the same session. |
+| **Codex** | 1st prompt: `codex exec --json` via a runner script that captures the auto-generated session ID. Subsequent prompts: `codex exec resume <id>` continues the same session. |
+
+Session mappings are stored in `~/.config/usage-waste/sessions/`.
 
 ## Configuration
 
@@ -76,8 +83,9 @@ Environment variables take highest priority:
 
 ## Design Choices
 
-- **`--bare` / `-q`**: Prevents recursive hook triggering
-- **`--no-session-persistence`**: Doesn't pollute your session history
+- **`--bare` / `--full-auto`**: Prevents recursive hook triggering on the mirrored calls
+- **Session continuation**: Same main session → same waste session, conversation context accumulates
 - **Detached spawn**: Hook exits immediately, never blocks your workflow
 - **No apiKey = no-op**: Silently skips if not configured, no errors
 - **Stats are best-effort**: Write failures don't affect the main flow
+- **Prompt via stdin**: Avoids command-line length limits and shell escaping issues
