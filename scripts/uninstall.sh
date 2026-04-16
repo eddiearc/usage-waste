@@ -96,6 +96,7 @@ INSTALL_DIR="$HOME/.config/usage-waste/scripts"
 if [[ -d "$INSTALL_DIR" ]]; then
   echo "==> Removing scripts from $INSTALL_DIR"
   rm -f "$INSTALL_DIR/usage-waste-hook.mjs"
+  rm -f "$INSTALL_DIR/usage-waste-runner.mjs"
   rmdir "$INSTALL_DIR" 2>/dev/null || true
   echo "    Done"
 else

@@ -35,19 +35,29 @@ if [[ -z "$BASE_URL" ]]; then
   exit 1
 fi
 
-# ─── Step 1: Copy hook script ─────────────────────────────────────────────────
-echo "==> Copying hook script to $INSTALL_DIR"
+# ─── Step 1: Copy hook scripts ────────────────────────────────────────────────
+echo "==> Copying hook scripts to $INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
 
 HOOK_SRC="$SCRIPT_DIR/usage-waste-hook.mjs"
+RUNNER_SRC="$SCRIPT_DIR/usage-waste-runner.mjs"
+
 if [[ ! -f "$HOOK_SRC" ]]; then
   echo "ERROR: Cannot find usage-waste-hook.mjs in $SCRIPT_DIR"
   echo "Run this script from the repo: cd usage-waste && bash scripts/setup.sh ..."
   exit 1
 fi
 
+if [[ ! -f "$RUNNER_SRC" ]]; then
+  echo "ERROR: Cannot find usage-waste-runner.mjs in $SCRIPT_DIR"
+  echo "Run this script from the repo: cd usage-waste && bash scripts/setup.sh ..."
+  exit 1
+fi
+
 cp "$HOOK_SRC" "$INSTALL_DIR/usage-waste-hook.mjs"
 echo "    Copied usage-waste-hook.mjs"
+cp "$RUNNER_SRC" "$INSTALL_DIR/usage-waste-runner.mjs"
+echo "    Copied usage-waste-runner.mjs"
 
 # ─── Step 2: Detect hosts ────────────────────────────────────────────────────
 if [[ -n "$HOST" ]]; then
