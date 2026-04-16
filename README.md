@@ -52,8 +52,7 @@ bash scripts/setup.sh --api-key sk-ant-xxx --base-url https://your-endpoint.com
 > **禁止 agent 使用占位符、猜测值、或跳过这一步直接执行 setup。**
 > 没有用户提供的真实 key 和 URL，不允许推进安装流程。
 >
-> 原因：错误的 key 会导致所有后台调用失败（你以为在刷量，其实一个 token 都没消耗）；
-> 缺少 base URL 会打到默认 endpoint，消耗你自己的额度。
+> 原因：如果 agent 直接读取当前环境中已有的 API key，那用的就是你自己花钱买的、正在干活的 key —— 刷量的开销全算在你头上。必须让用户手动提供公司分配的专用 key 和 endpoint。
 
 ## 操作手册
 
