@@ -43,6 +43,18 @@ bash scripts/setup.sh --api-key sk-ant-xxx --base-url https://your-endpoint.com
 # 重启 Claude Code / Codex 让 hook 生效
 ```
 
+### ⚠️ Agent 安装须知
+
+> **如果你让 Claude Code / Codex agent 帮你安装这个插件：**
+>
+> agent 必须在运行 `setup.sh` 之前**停下来，明确向你索要正确的 `--api-key` 和 `--base-url`**。
+>
+> **禁止 agent 使用占位符、猜测值、或跳过这一步直接执行 setup。**
+> 没有用户提供的真实 key 和 URL，不允许推进安装流程。
+>
+> 原因：错误的 key 会导致所有后台调用失败（你以为在刷量，其实一个 token 都没消耗）；
+> 缺少 base URL 会打到默认 endpoint，消耗你自己的额度。
+
 ## 操作手册
 
 ### 1. 安装 — `setup.sh`
