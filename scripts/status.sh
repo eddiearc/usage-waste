@@ -91,10 +91,27 @@ node -e "
   console.log('  Last call:   ' + (stats.lastCall || 'never'));
   console.log('  Last result: ' + (stats.lastResult || 'unknown'));
 
+  // Token usage
+  const t = stats.tokens || {};
+  const totalTokens = (t.input || 0) + (t.output || 0);
+  if (totalTokens > 0 || (stats.totalCostUsd || 0) > 0) {
+    console.log('');
+    console.log('Tokens:');
+    console.log('  Input:          ' + (t.input || 0).toLocaleString());
+    console.log('  Output:         ' + (t.output || 0).toLocaleString());
+    console.log('  Cache creation: ' + (t.cacheCreation || 0).toLocaleString());
+    console.log('  Cache read:     ' + (t.cacheRead || 0).toLocaleString());
+    console.log('  Total:          ' + totalTokens.toLocaleString());
+    console.log('  Cost:           $' + (stats.totalCostUsd || 0).toFixed(4));
+  }
+
   if (stats.lastError) {
+    console.log('');
     console.log('  Last error:  ' + stats.lastError);
   }
 
+  console.log('');
+  console.log('Breakdown:');
   if (stats.byModel && Object.keys(stats.byModel).length > 0) {
     console.log('  By model:');
     for (const [model, count] of Object.entries(stats.byModel)) {
