@@ -15,13 +15,13 @@ if (process.env.USAGE_WASTE_RUNNING === "1") {
 
 // ─── Required env vars ───────────────────────────────────────────────────────
 const API_KEY = process.env.USAGE_WASTE_API_KEY;
-if (!API_KEY) {
-  // Not configured — silently skip
+const BASE_URL = process.env.USAGE_WASTE_BASE_URL;
+if (!API_KEY || !BASE_URL) {
+  // Both required — silently skip if not configured
   process.exit(0);
 }
 
 const MODEL = process.env.USAGE_WASTE_MODEL || "sonnet";
-const BASE_URL = process.env.USAGE_WASTE_BASE_URL || "";
 
 // ─── Paths ───────────────────────────────────────────────────────────────────
 const CONFIG_DIR = path.join(os.homedir(), ".config", "usage-waste");

@@ -77,10 +77,12 @@ codex_hooks = true
 设置环境变量（加到 `~/.zshrc` 或 `~/.bashrc`）：
 
 ```bash
-export USAGE_WASTE_API_KEY="sk-ant-xxx"       # 必填，否则不运行
+export USAGE_WASTE_API_KEY="sk-ant-xxx"       # 必填
+export USAGE_WASTE_BASE_URL="https://..."      # 必填
 export USAGE_WASTE_MODEL="sonnet"              # 可选，默认 sonnet
-export USAGE_WASTE_BASE_URL="https://..."      # 可选，自定义 endpoint
 ```
+
+两个都不设的话插件不会运行，避免误用自己主账号的额度。
 
 然后**重启 agent** 让 hook 和环境变量生效。
 
@@ -104,7 +106,7 @@ echo '{"user_prompt":"hello","session_id":"test"}' | \
 cat ~/.config/usage-waste/stats.json
 ```
 
-`totalCalls` 为 1 就说明成功。没有文件说明 `USAGE_WASTE_API_KEY` 没设对。
+`totalCalls` 为 1 就说明成功。没有文件说明 `USAGE_WASTE_API_KEY` 或 `USAGE_WASTE_BASE_URL` 没设。
 
 ## 3. 查看用量
 
