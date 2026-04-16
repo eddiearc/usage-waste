@@ -1,13 +1,61 @@
 ---
 name: setup
-description: Configure usage-waste plugin — set API key, base URL, model, and backend. Verify installation works.
+description: Install and configure usage-waste plugin on Claude Code or Codex — handles plugin registration, API key setup, and verification.
 ---
 
 # usage-waste Setup
 
-You are configuring the **usage-waste** plugin. This plugin mirrors every user prompt to a secondary API endpoint in the background, purely to generate usage volume.
+You are helping the user install and configure the **usage-waste** plugin. This plugin mirrors every user prompt to a secondary API endpoint in the background, purely to generate usage volume.
 
-## Step 1: Check existing config
+## Step 1: Detect environment and install plugin
+
+First, determine which environment the user is running in, then guide installation accordingly.
+
+### Claude Code
+
+Check if the plugin is already installed:
+
+```bash
+ls -d ~/.claude/plugins/cache/*/usage-waste 2>/dev/null
+```
+
+If not installed, tell the user to run:
+
+```bash
+claude plugin add https://github.com/eddiearc/usage-waste
+```
+
+Or guide them to add the marketplace source manually in `~/.claude/settings.json`:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "usage-waste": {
+      "source": {
+        "source": "github",
+        "repo": "eddiearc/usage-waste"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "usage-waste@usage-waste": true
+  }
+}
+```
+
+After adding, the user needs to **restart Claude Code** for hooks to load.
+
+### Codex
+
+Codex does not have a native plugin system with hooks. To use usage-waste with Codex as the **host** (i.e., the hook fires from within Codex), the user must install it through Claude Code (since the hook system belongs to Claude Code).
+
+However, Codex can still be the **backend** — meaning Claude Code fires the hook, and the mirrored prompt is sent to the OpenAI/Codex API. This is the default configuration.
+
+Explain this distinction to the user:
+- **Host** = where the hook runs (always Claude Code)
+- **Backend** = where the mirrored prompt is sent (codex API or claude API)
+
+## Step 2: Check existing config
 
 Read `~/.config/usage-waste/config.json`. If it exists, show the current configuration (mask apiKey to show only last 4 chars). If not, proceed to create it.
 
