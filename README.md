@@ -9,21 +9,22 @@
 > 如果你填了自己主账号的 key，**消耗的是你自己的额度**。
 > 请使用专门用于刷量的 key。
 
-## 安装
+## 快速开始
 
 ```bash
 git clone https://github.com/eddiearc/usage-waste.git
 cd usage-waste
 bash scripts/setup.sh --api-key sk-ant-xxx --base-url https://your-endpoint.com
+# 重启 Claude Code / Codex 让 hook 生效
 ```
 
-setup.sh 会自动完成：
-1. 复制 hook 脚本到 `~/.config/usage-waste/scripts/`
-2. 检测已安装的 agent（Claude Code / Codex），注入 hook 到对应配置文件
-3. 写入环境变量到 shell profile（`~/.zshrc` 或 `~/.bashrc`）
-4. 运行验证，确认 stats.json 正常写入
+## 操作手册
 
-**参数：**
+### 1. 安装 — `setup.sh`
+
+```bash
+bash scripts/setup.sh --api-key <key> --base-url <url> [--model <model>] [--host <targets>]
+```
 
 | 参数 | 必填 | 说明 |
 |------|------|------|
@@ -32,30 +33,35 @@ setup.sh 会自动完成：
 | `--model <model>` | 否 | 默认 sonnet |
 | `--host <targets>` | 否 | 逗号分隔，如 `claude,codex`。不填则自动检测 |
 
+自动完成：
+1. 复制 hook 脚本到 `~/.config/usage-waste/scripts/`
+2. 检测已安装的 agent（Claude Code / Codex），注入 hook 到对应配置文件
+3. 写入环境变量到 shell profile（`~/.zshrc` 或 `~/.bashrc`）
+4. 运行验证，确认日志正常写入
+
 安装后**重启 agent** 让 hook 生效。
 
-## 验证
+### 2. 查看状态和用量 — `status.sh`
 
 ```bash
-bash scripts/status.sh
+bash scripts/status.sh             # 最近 7 天
+bash scripts/status.sh --days 1    # 只看今天
+bash scripts/status.sh --days 30   # 最近 30 天
+bash scripts/status.sh --all       # 全量
 ```
 
-| 状态 | 含义 |
-|---|---|
-| stats.jsonl 不存在 | hook 没触发过（agent 没重启？） |
-| status.json 显示 `skipped` | hook 触发了但缺环境变量 |
-| stats.jsonl 有记录 | 正常运行中，看 success/failed |
-
-## 查看用量
-
-```bash
-bash scripts/status.sh
-```
+输出内容：
+- 环境变量（API Key 加密显示）
+- Hook 注册状态（Claude Code / Codex）
+- 调用统计（总数、成功、失败、成功率）
+- Token 用量（input、output、cache、总计、费用）
+- 按 model / 日期 / session 分组明细
+- 最近错误记录
 
 输出示例：
 
 ```
-Stats:
+Stats (last 7 days):
   Total calls: 42 (success: 40, failed: 2, rate: 95.2%)
 
 Tokens:
@@ -72,7 +78,43 @@ Breakdown:
     def456: 15 calls, 5,000 tokens, $0.0400
 ```
 
-数据存储在 `~/.config/usage-waste/stats.jsonl`（每次调用 append 一行，并发安全）。
+### 3. 卸载 — `uninstall.sh`
+
+```bash
+bash scripts/uninstall.sh                    # 全部清理
+bash scripts/uninstall.sh --keep-stats       # 保留日志数据
+bash scripts/uninstall.sh --host claude      # 只卸载 Claude Code 的 hook
+bash scripts/uninstall.sh --host codex       # 只卸载 Codex 的 hook
+```
+
+自动完成：
+1. 从 Claude Code / Codex 配置中移除 usage-waste hook（只删自己的，不动别的）
+2. 从 shell profile 中移除 `USAGE_WASTE_*` 环境变量
+3. 删除 `~/.config/usage-waste/` 下的脚本、session、日志
+4. 逐项验证移除结果
+
+## 文件说明
+
+```
+scripts/
+├── setup.sh                # 用户操作：安装
+├── status.sh               # 用户操作：查看状态和用量
+├── uninstall.sh            # 用户操作：卸载
+├── usage-waste-hook.mjs    # 内部：hook 入口，被 agent 自动触发
+└── usage-waste-runner.mjs  # 内部：后台 runner，被 hook spawn
+```
+
+安装后的本地文件：
+
+```
+~/.config/usage-waste/
+├── scripts/                # hook 脚本副本
+├── sessions/               # session 映射（续接对话用）
+├── logs/                   # 按天分片的 JSONL 日志
+│   ├── 2026-04-14.jsonl
+│   ├── 2026-04-15.jsonl
+│   └── 2026-04-16.jsonl
+└── status.json             # hook 运行状态（skipped/active）
 ```
 
 ## 防递归
