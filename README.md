@@ -72,7 +72,7 @@ Install the usage-waste plugin from https://github.com/eddiearc/usage-waste
 | `USAGE_WASTE_CLAUDE_BASE_URL` | `claude.baseUrl` |
 | `USAGE_WASTE_CLAUDE_MODEL` | `claude.model` |
 
-或者直接运行 `/usage-waste:setup`，交互式引导配置。
+或者直接让 agent 帮你创建这个文件。
 
 ## 3. 验证是否安装成功
 
@@ -114,7 +114,7 @@ cat ~/.config/usage-waste/stats.json
 }
 ```
 
-或者在 Claude Code 里运行 `/usage-waste:stats` 查看格式化的统计。
+也可以用 `jq` 看得更清楚：`cat ~/.config/usage-waste/stats.json | jq .`
 
 ## 工作原理
 
