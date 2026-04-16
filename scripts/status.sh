@@ -2,8 +2,20 @@
 set -euo pipefail
 
 CONFIG_DIR="$HOME/.config/usage-waste"
-LOG_FILE="$CONFIG_DIR/stats.jsonl"
+LOGS_DIR="$CONFIG_DIR/logs"
 STATUS_FILE="$CONFIG_DIR/status.json"
+
+# ─── Parse args ───────────────────────────────────────────────────────────────
+DAYS=7
+ALL=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --days) DAYS="$2"; shift 2 ;;
+    --all)  ALL=true; shift ;;
+    *)      echo "Unknown option: $1"; exit 1 ;;
+  esac
+done
 
 echo "=== usage-waste Status ==="
 echo ""
@@ -77,24 +89,54 @@ if [[ -f "$STATUS_FILE" ]]; then
   fi
 fi
 
-# ─── Aggregate stats from JSONL ──────────────────────────────────────────────
-echo "Stats:"
-if [[ ! -f "$LOG_FILE" ]]; then
-  echo "  No stats log — hook has never completed a call"
+# ─── Collect log files ───────────────────────────────────────────────────────
+if [[ ! -d "$LOGS_DIR" ]]; then
+  echo "Stats:"
+  echo "  No logs directory — hook has never completed a call"
   echo ""
   exit 0
 fi
 
+if $ALL; then
+  LOG_FILES=$(ls "$LOGS_DIR"/*.jsonl 2>/dev/null | sort)
+  RANGE_LABEL="all time"
+else
+  # Generate date list for last N days
+  LOG_FILES=""
+  for i in $(seq 0 $((DAYS - 1))); do
+    D=$(date -v-${i}d +%Y-%m-%d 2>/dev/null || date -d "$i days ago" +%Y-%m-%d 2>/dev/null)
+    F="$LOGS_DIR/$D.jsonl"
+    [[ -f "$F" ]] && LOG_FILES="$LOG_FILES $F"
+  done
+  RANGE_LABEL="last $DAYS days"
+fi
+
+if [[ -z "$LOG_FILES" ]]; then
+  echo "Stats ($RANGE_LABEL):"
+  echo "  No log entries found"
+  echo ""
+  exit 0
+fi
+
+# ─── Aggregate ────────────────────────────────────────────────────────────────
+echo "Stats ($RANGE_LABEL):"
+
 node -e "
   const fs = require('fs');
-  const lines = fs.readFileSync(process.argv[1], 'utf8').trim().split('\n').filter(Boolean);
+  const files = process.argv.slice(1);
 
-  if (lines.length === 0) {
-    console.log('  No entries in log');
-    process.exit(0);
+  const entries = [];
+  for (const f of files) {
+    const lines = fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean);
+    for (const l of lines) {
+      try { entries.push(JSON.parse(l)); } catch {}
+    }
   }
 
-  const entries = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  if (entries.length === 0) {
+    console.log('  No entries');
+    process.exit(0);
+  }
 
   let total = 0, success = 0, failed = 0;
   let tokIn = 0, tokOut = 0, tokCacheCreate = 0, tokCacheRead = 0;
@@ -139,7 +181,6 @@ node -e "
   console.log('  Last call:   ' + (last.time || 'unknown'));
   console.log('  Last result: ' + (last.success ? 'success' : 'failed'));
 
-  // Tokens
   console.log('');
   console.log('Tokens:');
   console.log('  Input:          ' + tokIn.toLocaleString());
@@ -149,7 +190,11 @@ node -e "
   console.log('  Total:          ' + totalTokens.toLocaleString());
   console.log('  Cost:           \$' + totalCost.toFixed(4));
 
-  // By model
+  if (last.error) {
+    console.log('');
+    console.log('  Last error:  ' + last.error);
+  }
+
   console.log('');
   console.log('Breakdown:');
   if (Object.keys(byModel).length > 0) {
@@ -157,14 +202,12 @@ node -e "
     for (const [m, c] of Object.entries(byModel)) console.log('    ' + m + ': ' + c);
   }
 
-  // By date (last 7)
   const dates = Object.keys(byDate).sort().slice(-7);
   if (dates.length > 0) {
     console.log('  Recent days:');
     for (const d of dates) console.log('    ' + d + ': ' + byDate[d]);
   }
 
-  // By session (last 5)
   const sessionIds = Object.keys(bySession);
   if (sessionIds.length > 0) {
     console.log('  Sessions (' + sessionIds.length + ' total, last 5):');
@@ -175,7 +218,6 @@ node -e "
     }
   }
 
-  // Errors
   if (errors.length > 0) {
     console.log('');
     console.log('Recent errors (' + errors.length + ' total, last 3):');
@@ -183,6 +225,6 @@ node -e "
       console.log('  [' + e.time + '] ' + (e.error || '').slice(0, 120));
     }
   }
-" "$LOG_FILE"
+" $LOG_FILES
 
 echo ""

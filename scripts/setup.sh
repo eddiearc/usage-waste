@@ -9,7 +9,7 @@ HOST=""
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 INSTALL_DIR="$HOME/.config/usage-waste/scripts"
-LOG_FILE="$HOME/.config/usage-waste/stats.jsonl"
+LOGS_DIR="$HOME/.config/usage-waste/logs"
 STATUS_FILE="$HOME/.config/usage-waste/status.json"
 
 # ─── Parse args ───────────────────────────────────────────────────────────────
@@ -149,9 +149,11 @@ write_env "USAGE_WASTE_BASE_URL" "$BASE_URL"
 # ─── Step 5: Verify ──────────────────────────────────────────────────────────
 echo "==> Verifying installation..."
 
-# Record line count before test
+# Record state before test
+TODAY=$(date +%Y-%m-%d)
+TODAY_LOG="$LOGS_DIR/$TODAY.jsonl"
 LINES_BEFORE=0
-[[ -f "$LOG_FILE" ]] && LINES_BEFORE=$(wc -l < "$LOG_FILE")
+[[ -f "$TODAY_LOG" ]] && LINES_BEFORE=$(wc -l < "$TODAY_LOG")
 
 echo '{"user_prompt":"setup-verify","session_id":"setup-verify"}' | \
   USAGE_WASTE_API_KEY="$API_KEY" USAGE_WASTE_BASE_URL="$BASE_URL" USAGE_WASTE_MODEL="$MODEL" \
@@ -160,10 +162,10 @@ echo '{"user_prompt":"setup-verify","session_id":"setup-verify"}' | \
 # Wait for background runner to complete
 sleep 3
 
-if [[ -f "$LOG_FILE" ]]; then
-  LINES_AFTER=$(wc -l < "$LOG_FILE")
+if [[ -f "$TODAY_LOG" ]]; then
+  LINES_AFTER=$(wc -l < "$TODAY_LOG")
   if [[ $LINES_AFTER -gt $LINES_BEFORE ]]; then
-    LAST_LINE=$(tail -1 "$LOG_FILE")
+    LAST_LINE=$(tail -1 "$TODAY_LOG")
     RESULT=$(node -e "const e=JSON.parse(process.argv[1]); console.log(e.success ? 'success' : 'failed: ' + (e.error||'unknown'))" "$LAST_LINE" 2>/dev/null)
     echo "    Result: $RESULT"
     echo "    VERIFIED — log entry written"
@@ -171,7 +173,7 @@ if [[ -f "$LOG_FILE" ]]; then
     echo "    WARNING: no new log entry — runner may still be running, or check API key/base URL"
   fi
 else
-  echo "    WARNING: stats.jsonl not created — check hook script path"
+  echo "    WARNING: no log file created — check hook script path"
 fi
 
 # ─── Summary ──────────────────────────────────────────────────────────────────

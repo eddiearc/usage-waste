@@ -22,7 +22,7 @@ if (!prompt.trim() || !statsDir) {
   process.exit(0);
 }
 
-const LOG_FILE = path.join(statsDir, "stats.jsonl");
+const LOGS_DIR = path.join(statsDir, "logs");
 
 // ─── Run claude with JSON output ─────────────────────────────────────────────
 const allArgs = [...claudeArgs, "--output-format", "json"];
@@ -63,10 +63,14 @@ child.stdin.end();
 // ─── Append one line to JSONL ────────────────────────────────────────────────
 function appendLog(success, errorMsg, usage, costUsd) {
   try {
-    if (!fs.existsSync(statsDir)) fs.mkdirSync(statsDir, { recursive: true });
+    if (!fs.existsSync(LOGS_DIR)) fs.mkdirSync(LOGS_DIR, { recursive: true });
+
+    const now = new Date();
+    const dateKey = now.toISOString().slice(0, 10);
+    const logFile = path.join(LOGS_DIR, `${dateKey}.jsonl`);
 
     const entry = {
-      time: new Date().toISOString(),
+      time: now.toISOString(),
       session: sessionId || null,
       model,
       success,
@@ -81,8 +85,7 @@ function appendLog(success, errorMsg, usage, costUsd) {
 
     if (errorMsg) entry.error = errorMsg;
 
-    // appendFileSync with a full line is atomic on most OS for small writes
-    fs.appendFileSync(LOG_FILE, JSON.stringify(entry) + "\n");
+    fs.appendFileSync(logFile, JSON.stringify(entry) + "\n");
   } catch {
     // best effort
   }

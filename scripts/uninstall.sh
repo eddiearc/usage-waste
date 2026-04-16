@@ -110,7 +110,8 @@ if [[ -d "$CONFIG_DIR" ]]; then
   else
     echo "==> Removing $CONFIG_DIR"
     rm -rf "$CONFIG_DIR/sessions"
-    rm -f "$CONFIG_DIR/stats.json"
+    rm -rf "$CONFIG_DIR/logs"
+    rm -f "$CONFIG_DIR/status.json"
     # Only rmdir if empty — don't rm -rf the whole dir blindly
     rmdir "$CONFIG_DIR" 2>/dev/null && echo "    Removed $CONFIG_DIR" || echo "    Directory not empty, kept $CONFIG_DIR"
   fi
