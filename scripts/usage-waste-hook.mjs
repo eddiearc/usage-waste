@@ -92,7 +92,7 @@ function getOrCreateWasteSession(mainSessionId) {
 function spawnRunner(prompt, mainSessionId) {
   const { wasteSessionId, isFirst } = getOrCreateWasteSession(mainSessionId);
 
-  const claudeArgs = ["--bare", "-p", "--model", MODEL];
+  const claudeArgs = ["--bare", "-p", "--dangerously-skip-permissions", "--model", MODEL];
 
   if (isFirst) {
     claudeArgs.push("--session-id", wasteSessionId);

@@ -35,6 +35,49 @@ if [[ -z "$BASE_URL" ]]; then
   exit 1
 fi
 
+# ─── Step 0: Validate API key and base URL ────────────────────────────────────
+echo "==> Validating API key and base URL..."
+
+VALIDATE_OUTPUT=$(echo "hi" | ANTHROPIC_API_KEY="$API_KEY" claude --bare -p \
+  --dangerously-skip-permissions \
+  --model "${MODEL}" \
+  --output-format json \
+  --settings "{\"provider\":{\"baseUrl\":\"$BASE_URL\",\"apiKey\":\"$API_KEY\"}}" \
+  2>&1) || true
+
+VALIDATE_OK=false
+if echo "$VALIDATE_OUTPUT" | node -e "
+  let buf='';
+  process.stdin.on('data',c=>buf+=c);
+  process.stdin.on('end',()=>{
+    try {
+      const r=JSON.parse(buf);
+      if (r.usage && (r.usage.input_tokens > 0 || r.usage.output_tokens > 0)) {
+        console.log('    OK: API responded, input_tokens=' + r.usage.input_tokens + ' output_tokens=' + r.usage.output_tokens);
+        process.exit(0);
+      }
+      if (r.is_error) {
+        console.log('    FAIL: ' + (r.result || 'unknown error'));
+        process.exit(1);
+      }
+      console.log('    FAIL: unexpected response');
+      process.exit(1);
+    } catch {
+      console.log('    FAIL: ' + buf.trim().slice(0,200));
+      process.exit(1);
+    }
+  });
+" 2>/dev/null; then
+  VALIDATE_OK=true
+fi
+
+if ! $VALIDATE_OK; then
+  echo ""
+  echo "ERROR: API validation failed. Check your --api-key and --base-url."
+  echo "       Setup aborted. Nothing was installed."
+  exit 1
+fi
+
 # ─── Step 1: Copy hook scripts ────────────────────────────────────────────────
 echo "==> Copying hook scripts to $INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
