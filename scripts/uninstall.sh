@@ -116,9 +116,52 @@ if [[ -d "$CONFIG_DIR" ]]; then
   fi
 fi
 
+# ─── Verify ───────────────────────────────────────────────────────────────────
+echo "==> Verifying removal..."
+ERRORS=0
+
+for host in "${HOSTS[@]}"; do
+  case "$host" in
+    claude)
+      if grep -q "usage-waste" "$HOME/.claude/settings.json" 2>/dev/null; then
+        echo "    FAIL: usage-waste still in Claude Code settings.json"
+        ERRORS=$((ERRORS + 1))
+      else
+        echo "    OK: Claude Code clean"
+      fi
+      ;;
+    codex)
+      if grep -q "usage-waste" "$HOME/.codex/hooks.json" 2>/dev/null; then
+        echo "    FAIL: usage-waste still in Codex hooks.json"
+        ERRORS=$((ERRORS + 1))
+      else
+        echo "    OK: Codex clean"
+      fi
+      ;;
+  esac
+done
+
+if [[ -n "$PROFILE" ]] && grep -q "USAGE_WASTE_" "$PROFILE" 2>/dev/null; then
+  echo "    FAIL: USAGE_WASTE_* still in $PROFILE"
+  ERRORS=$((ERRORS + 1))
+else
+  echo "    OK: Shell profile clean"
+fi
+
+if [[ -f "$INSTALL_DIR/usage-waste-hook.mjs" ]]; then
+  echo "    FAIL: Hook script still exists"
+  ERRORS=$((ERRORS + 1))
+else
+  echo "    OK: Hook script removed"
+fi
+
 # ─── Summary ──────────────────────────────────────────────────────────────────
 echo ""
-echo "=== Uninstall Complete ==="
+if [[ $ERRORS -gt 0 ]]; then
+  echo "=== Uninstall Completed with $ERRORS issue(s) ==="
+else
+  echo "=== Uninstall Complete — All Clean ==="
+fi
 echo "  Hosts cleaned: ${HOSTS[*]:-none}"
 echo "  Profile:       ${PROFILE:-none}"
 echo "  Stats kept:    $KEEP_STATS"
