@@ -2,113 +2,51 @@
 
 每次你提交 prompt 时，后台自动把同样的内容通过 `claude --bare -p` 发到你指定的 API endpoint，刷用量。同一 session 内自动续接对话。
 
-## ⚠️ 必须设置环境变量
+## ⚠️ 必须配置自己的 API Key 和 Base URL
 
-> **不设置 `USAGE_WASTE_API_KEY` 插件不会运行。**
+> **两个都不配，插件不会运行。**
 >
 > 如果你填了自己主账号的 key，**消耗的是你自己的额度**。
 > 请使用专门用于刷量的 key。
 
-## 1. 安装
-
-### Claude Code
-
-让 agent 执行：
-
-```
-Install the usage-waste plugin from https://github.com/eddiearc/usage-waste
-```
-
-或者手动编辑 `~/.claude/settings.json`：
-
-```json
-{
-  "extraKnownMarketplaces": {
-    "usage-waste": {
-      "source": { "source": "github", "repo": "eddiearc/usage-waste" }
-    }
-  },
-  "enabledPlugins": {
-    "usage-waste@usage-waste": true
-  }
-}
-```
-
-### Codex
-
-手动安装：
+## 安装
 
 ```bash
-# 下载脚本
-mkdir -p ~/.config/usage-waste/scripts
-curl -sL https://raw.githubusercontent.com/eddiearc/usage-waste/main/scripts/usage-waste-hook.mjs \
-  -o ~/.config/usage-waste/scripts/usage-waste-hook.mjs
+git clone https://github.com/eddiearc/usage-waste.git
+cd usage-waste
+bash scripts/setup.sh --api-key sk-ant-xxx --base-url https://your-endpoint.com
 ```
 
-在 `~/.codex/hooks.json` 中注册（如果文件已存在，合并 `UserPromptSubmit` 部分）：
+setup.sh 会自动完成：
+1. 复制 hook 脚本到 `~/.config/usage-waste/scripts/`
+2. 检测已安装的 agent（Claude Code / Codex），注入 hook 到对应配置文件
+3. 写入环境变量到 shell profile（`~/.zshrc` 或 `~/.bashrc`）
+4. 运行验证，确认 stats.json 正常写入
 
-```json
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$HOME/.config/usage-waste/scripts/usage-waste-hook.mjs\"",
-            "timeout": 10
-          }
-        ]
-      }
-    ]
-  }
-}
-```
+**参数：**
 
-确保 `~/.codex/config.toml` 中启用了 hook：
+| 参数 | 必填 | 说明 |
+|------|------|------|
+| `--api-key <key>` | 是 | API key |
+| `--base-url <url>` | 是 | API endpoint |
+| `--model <model>` | 否 | 默认 sonnet |
+| `--host <targets>` | 否 | 逗号分隔，如 `claude,codex`。不填则自动检测 |
 
-```toml
-[features]
-codex_hooks = true
-```
+安装后**重启 agent** 让 hook 生效。
 
-### 两者都需要
-
-设置环境变量（加到 `~/.zshrc` 或 `~/.bashrc`）：
-
-```bash
-export USAGE_WASTE_API_KEY="sk-ant-xxx"       # 必填
-export USAGE_WASTE_BASE_URL="https://..."      # 必填
-export USAGE_WASTE_MODEL="sonnet"              # 可选，默认 sonnet
-```
-
-两个都不设的话插件不会运行，避免误用自己主账号的额度。
-
-然后**重启 agent** 让 hook 和环境变量生效。
-
-## 2. 验证
-
-```bash
-# Claude Code 插件路径
-echo '{"user_prompt":"hello","session_id":"test"}' | \
-  USAGE_WASTE_API_KEY="sk-ant-xxx" \
-  node "$(find ~/.claude/plugins/cache -path '*/usage-waste/*/scripts/usage-waste-hook.mjs' 2>/dev/null | head -1)"
-
-# 或 Codex 手动安装路径
-echo '{"user_prompt":"hello","session_id":"test"}' | \
-  USAGE_WASTE_API_KEY="sk-ant-xxx" \
-  node ~/.config/usage-waste/scripts/usage-waste-hook.mjs
-```
-
-检查 stats：
+## 验证
 
 ```bash
 cat ~/.config/usage-waste/stats.json
 ```
 
-`totalCalls` 为 1 就说明成功。没有文件说明 `USAGE_WASTE_API_KEY` 或 `USAGE_WASTE_BASE_URL` 没设。
+| stats.json 内容 | 含义 |
+|---|---|
+| 文件不存在 | hook 没触发过（agent 没重启？） |
+| `"status": "skipped"` | hook 触发了但缺环境变量，看 `skipReason` |
+| `"status": "active"` | 正常运行中 |
 
-## 3. 查看用量
+## 查看用量
 
 ```bash
 cat ~/.config/usage-waste/stats.json
