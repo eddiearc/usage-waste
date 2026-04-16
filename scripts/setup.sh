@@ -132,29 +132,21 @@ for host in "${HOSTS[@]}"; do
   esac
 done
 
-# ─── Step 4: Write env vars to shell profile ─────────────────────────────────
-PROFILE=""
-[[ -f "$HOME/.zshrc" ]]  && PROFILE="$HOME/.zshrc"
-[[ -z "$PROFILE" && -f "$HOME/.bashrc" ]] && PROFILE="$HOME/.bashrc"
-[[ -z "$PROFILE" ]] && PROFILE="$HOME/.zshrc"  # default to zshrc
+# ─── Step 4: Write config file ────────────────────────────────────────────────
+CONFIG_FILE="$HOME/.config/usage-waste/config.json"
+echo "==> Writing config to $CONFIG_FILE"
 
-echo "==> Writing env vars to $PROFILE"
+node -e "
+  const fs = require('fs');
+  const file = process.argv[1];
+  const apiKey = process.argv[2];
+  const baseUrl = process.argv[3];
+  const model = process.argv[4];
 
-write_env() {
-  local name="$1" value="$2"
-  if grep -q "^export ${name}=" "$PROFILE" 2>/dev/null; then
-    # Update existing
-    sed -i '' "s|^export ${name}=.*|export ${name}=\"${value}\"|" "$PROFILE"
-    echo "    Updated $name"
-  else
-    echo "export ${name}=\"${value}\"" >> "$PROFILE"
-    echo "    Added $name"
-  fi
-}
-
-write_env "USAGE_WASTE_API_KEY" "$API_KEY"
-write_env "USAGE_WASTE_BASE_URL" "$BASE_URL"
-[[ "$MODEL" != "sonnet" ]] && write_env "USAGE_WASTE_MODEL" "$MODEL"
+  const config = { apiKey, baseUrl, model };
+  fs.writeFileSync(file, JSON.stringify(config, null, 2) + '\n');
+  console.log('    Written: apiKey=...' + apiKey.slice(-4) + ', baseUrl=' + baseUrl + ', model=' + model);
+" "$CONFIG_FILE" "$API_KEY" "$BASE_URL" "$MODEL"
 
 # ─── Step 5: Verify ──────────────────────────────────────────────────────────
 echo "==> Verifying installation..."
@@ -166,7 +158,6 @@ LINES_BEFORE=0
 [[ -f "$TODAY_LOG" ]] && LINES_BEFORE=$(wc -l < "$TODAY_LOG")
 
 echo '{"user_prompt":"setup-verify","session_id":"setup-verify"}' | \
-  USAGE_WASTE_API_KEY="$API_KEY" USAGE_WASTE_BASE_URL="$BASE_URL" USAGE_WASTE_MODEL="$MODEL" \
   node "$INSTALL_DIR/usage-waste-hook.mjs"
 
 # Wait for background runner to complete
@@ -193,8 +184,8 @@ echo "  API Key:  ...${API_KEY: -4}"
 echo "  Base URL: $BASE_URL"
 echo "  Model:    $MODEL"
 echo "  Hosts:    ${HOSTS[*]:-none}"
+echo "  Config:   $CONFIG_FILE"
 echo "  Script:   $INSTALL_DIR/usage-waste-hook.mjs"
 echo "  Logs:     $LOGS_DIR/"
-echo "  Profile:  $PROFILE"
 echo ""
 echo "IMPORTANT: Restart your agent (Claude Code / Codex) for hooks to take effect."

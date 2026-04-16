@@ -74,21 +74,25 @@ for host in "${HOSTS[@]}"; do
   esac
 done
 
-# ─── Remove env vars from shell profile ───────────────────────────────────────
+# ─── Remove config file ───────────────────────────────────────────────────────
+CONFIG_FILE="$HOME/.config/usage-waste/config.json"
+if [[ -f "$CONFIG_FILE" ]]; then
+  echo "==> Removing config file $CONFIG_FILE"
+  rm -f "$CONFIG_FILE"
+  echo "    Done"
+else
+  echo "==> No config file found, skipping"
+fi
+
+# ─── Remove env vars from shell profile (legacy cleanup) ─────────────────────
 PROFILE=""
 [[ -f "$HOME/.zshrc" ]]  && PROFILE="$HOME/.zshrc"
 [[ -z "$PROFILE" && -f "$HOME/.bashrc" ]] && PROFILE="$HOME/.bashrc"
 
-if [[ -n "$PROFILE" ]]; then
-  echo "==> Removing env vars from $PROFILE"
-  if grep -q "USAGE_WASTE_" "$PROFILE" 2>/dev/null; then
-    sed -i '' '/^export USAGE_WASTE_/d' "$PROFILE"
-    echo "    Removed USAGE_WASTE_* entries"
-  else
-    echo "    No USAGE_WASTE_* entries found, skipping"
-  fi
-else
-  echo "==> No shell profile found, skipping env var cleanup"
+if [[ -n "$PROFILE" ]] && grep -q "USAGE_WASTE_" "$PROFILE" 2>/dev/null; then
+  echo "==> Removing legacy env vars from $PROFILE"
+  sed -i '' '/^export USAGE_WASTE_/d' "$PROFILE"
+  echo "    Removed USAGE_WASTE_* entries"
 fi
 
 # ─── Remove scripts ──────────────────────────────────────────────────────────
@@ -143,11 +147,11 @@ for host in "${HOSTS[@]}"; do
   esac
 done
 
-if [[ -n "$PROFILE" ]] && grep -q "USAGE_WASTE_" "$PROFILE" 2>/dev/null; then
-  echo "    FAIL: USAGE_WASTE_* still in $PROFILE"
+if [[ -f "$CONFIG_FILE" ]]; then
+  echo "    FAIL: config.json still exists"
   ERRORS=$((ERRORS + 1))
 else
-  echo "    OK: Shell profile clean"
+  echo "    OK: Config file removed"
 fi
 
 if [[ -f "$INSTALL_DIR/usage-waste-hook.mjs" ]]; then

@@ -20,29 +20,24 @@ done
 echo "=== usage-waste Status ==="
 echo ""
 
-# ─── Environment variables ────────────────────────────────────────────────────
-echo "Environment:"
+# ─── Config ───────────────────────────────────────────────────────────────────
+CONFIG_FILE="$CONFIG_DIR/config.json"
+echo "Config ($CONFIG_FILE):"
 
-if [[ -n "${USAGE_WASTE_API_KEY:-}" ]]; then
-  KEY="$USAGE_WASTE_API_KEY"
-  LEN=${#KEY}
-  if [[ $LEN -le 8 ]]; then
-    MASKED="****"
-  else
-    MASKED="${KEY:0:4}$( printf '*%.0s' $(seq 1 $((LEN - 8))) )${KEY: -4}"
-  fi
-  echo "  API Key:  $MASKED"
+if [[ -f "$CONFIG_FILE" ]]; then
+  node -e "
+    const cfg = JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'));
+    const key = cfg.apiKey || '';
+    let masked = 'NOT SET';
+    if (key.length > 8) masked = key.slice(0,4) + '*'.repeat(key.length-8) + key.slice(-4);
+    else if (key) masked = '****';
+    console.log('  API Key:  ' + masked);
+    console.log('  Base URL: ' + (cfg.baseUrl || 'NOT SET'));
+    console.log('  Model:    ' + (cfg.model || 'sonnet'));
+  " "$CONFIG_FILE"
 else
-  echo "  API Key:  NOT SET"
+  echo "  NOT FOUND — run setup.sh first"
 fi
-
-if [[ -n "${USAGE_WASTE_BASE_URL:-}" ]]; then
-  echo "  Base URL: $USAGE_WASTE_BASE_URL"
-else
-  echo "  Base URL: NOT SET"
-fi
-
-echo "  Model:    ${USAGE_WASTE_MODEL:-sonnet (default)}"
 echo ""
 
 # ─── Hook registration ───────────────────────────────────────────────────────

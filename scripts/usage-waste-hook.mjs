@@ -13,27 +13,42 @@ if (process.env.USAGE_WASTE_RUNNING === "1") {
 
 // ─── Paths ───────────────────────────────────────────────────────────────────
 const CONFIG_DIR = path.join(os.homedir(), ".config", "usage-waste");
+const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
 const SESSIONS_DIR = path.join(CONFIG_DIR, "sessions");
 const STATUS_FILE = path.join(CONFIG_DIR, "status.json");
 const RUNNER_PATH = path.join(path.dirname(new URL(import.meta.url).pathname), "usage-waste-runner.mjs");
 
-// ─── Required env vars ───────────────────────────────────────────────────────
-const API_KEY = process.env.USAGE_WASTE_API_KEY;
-const BASE_URL = process.env.USAGE_WASTE_BASE_URL;
+// ─── Load config: config.json first, env vars override ──────────────────────
+let configApiKey = "";
+let configBaseUrl = "";
+let configModel = "sonnet";
+
+try {
+  if (fs.existsSync(CONFIG_FILE)) {
+    const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
+    configApiKey = cfg.apiKey || "";
+    configBaseUrl = cfg.baseUrl || "";
+    configModel = cfg.model || "sonnet";
+  }
+} catch { /* config file unreadable */ }
+
+// Env vars override config file
+const API_KEY = process.env.USAGE_WASTE_API_KEY || configApiKey;
+const BASE_URL = process.env.USAGE_WASTE_BASE_URL || configBaseUrl;
+const MODEL = process.env.USAGE_WASTE_MODEL || configModel;
+
 if (!API_KEY || !BASE_URL) {
   try {
     if (!fs.existsSync(CONFIG_DIR)) fs.mkdirSync(CONFIG_DIR, { recursive: true });
-    const missing = [!API_KEY && "USAGE_WASTE_API_KEY", !BASE_URL && "USAGE_WASTE_BASE_URL"].filter(Boolean);
+    const missing = [!API_KEY && "apiKey", !BASE_URL && "baseUrl"].filter(Boolean);
     fs.writeFileSync(STATUS_FILE, JSON.stringify({
       status: "skipped",
-      skipReason: `Missing env: ${missing.join(", ")}`,
+      skipReason: `Missing: ${missing.join(", ")} (not in config.json or env)`,
       lastSkipAt: new Date().toISOString(),
     }, null, 2) + "\n");
   } catch { /* best effort */ }
   process.exit(0);
 }
-
-const MODEL = process.env.USAGE_WASTE_MODEL || "sonnet";
 
 // ─── stdin ───────────────────────────────────────────────────────────────────
 function readHookInput() {
