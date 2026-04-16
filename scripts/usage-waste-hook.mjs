@@ -7,8 +7,6 @@ import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 
 // ─── Recursion guard ─────────────────────────────────────────────────────────
-// The spawned `claude --bare` skips hooks, but as a belt-and-suspenders
-// measure we also set USAGE_WASTE_RUNNING=1 on the child process.
 if (process.env.USAGE_WASTE_RUNNING === "1") {
   process.exit(0);
 }
@@ -17,15 +15,15 @@ if (process.env.USAGE_WASTE_RUNNING === "1") {
 const CONFIG_DIR = path.join(os.homedir(), ".config", "usage-waste");
 const SESSIONS_DIR = path.join(CONFIG_DIR, "sessions");
 const STATS_FILE = path.join(CONFIG_DIR, "stats.json");
+const RUNNER_PATH = path.join(path.dirname(new URL(import.meta.url).pathname), "usage-waste-runner.mjs");
 
 // ─── Required env vars ───────────────────────────────────────────────────────
 const API_KEY = process.env.USAGE_WASTE_API_KEY;
 const BASE_URL = process.env.USAGE_WASTE_BASE_URL;
 if (!API_KEY || !BASE_URL) {
-  // Write skip reason to stats file so user knows why it's not running
   try {
     if (!fs.existsSync(CONFIG_DIR)) fs.mkdirSync(CONFIG_DIR, { recursive: true });
-    let stats = { totalCalls: 0, byModel: {}, byDate: {}, lastCall: null, recentSessions: [] };
+    let stats = { totalCalls: 0, successCalls: 0, failedCalls: 0, byModel: {}, byDate: {}, lastCall: null, lastResult: null, lastError: null, recentErrors: [], recentSessions: [] };
     try {
       if (fs.existsSync(STATS_FILE)) stats = { ...stats, ...JSON.parse(fs.readFileSync(STATS_FILE, "utf8")) };
     } catch { /* reset */ }
@@ -79,32 +77,41 @@ function getOrCreateWasteSession(mainSessionId) {
   return { wasteSessionId, isFirst: true };
 }
 
-// ─── Spawn claude ────────────────────────────────────────────────────────────
-function spawnClaude(prompt, mainSessionId) {
+// ─── Spawn runner ────────────────────────────────────────────────────────────
+function spawnRunner(prompt, mainSessionId) {
   const { wasteSessionId, isFirst } = getOrCreateWasteSession(mainSessionId);
 
-  const args = ["--bare", "-p"];
-  args.push("--model", MODEL);
+  // Build claude args
+  const claudeArgs = ["--bare", "-p", "--model", MODEL];
 
   if (isFirst) {
-    args.push("--session-id", wasteSessionId);
+    claudeArgs.push("--session-id", wasteSessionId);
   } else {
-    args.push("--resume", wasteSessionId);
+    claudeArgs.push("--resume", wasteSessionId);
   }
 
   if (BASE_URL) {
-    args.push("--settings", JSON.stringify({
+    claudeArgs.push("--settings", JSON.stringify({
       provider: { baseUrl: BASE_URL, apiKey: API_KEY },
     }));
   }
 
-  const child = spawn("claude", args, {
+  // Runner args: <stats-file> <session-id> <model> <claude-args...>
+  const runnerArgs = [
+    RUNNER_PATH,
+    STATS_FILE,
+    mainSessionId || "",
+    MODEL,
+    ...claudeArgs,
+  ];
+
+  const child = spawn(process.execPath, runnerArgs, {
     detached: true,
     stdio: ["pipe", "ignore", "ignore"],
     env: {
       ...process.env,
       ANTHROPIC_API_KEY: API_KEY,
-      USAGE_WASTE_RUNNING: "1",  // recursion guard
+      USAGE_WASTE_RUNNING: "1",
     },
   });
 
@@ -113,46 +120,9 @@ function spawnClaude(prompt, mainSessionId) {
   child.unref();
 }
 
-// ─── Stats ───────────────────────────────────────────────────────────────────
-function updateStats(sessionId) {
-  try {
-    if (!fs.existsSync(CONFIG_DIR)) {
-      fs.mkdirSync(CONFIG_DIR, { recursive: true });
-    }
-
-    let stats = { totalCalls: 0, byModel: {}, byDate: {}, lastCall: null, recentSessions: [] };
-    try {
-      if (fs.existsSync(STATS_FILE)) {
-        stats = { ...stats, ...JSON.parse(fs.readFileSync(STATS_FILE, "utf8")) };
-      }
-    } catch { /* reset */ }
-
-    const now = new Date();
-    const dateKey = now.toISOString().slice(0, 10);
-
-    stats.status = "active";
-    delete stats.skipReason;
-    delete stats.lastSkipAt;
-    stats.totalCalls += 1;
-    stats.byModel[MODEL] = (stats.byModel[MODEL] || 0) + 1;
-    stats.byDate[dateKey] = (stats.byDate[dateKey] || 0) + 1;
-    stats.lastCall = now.toISOString();
-
-    if (sessionId && !stats.recentSessions.includes(sessionId)) {
-      stats.recentSessions.push(sessionId);
-      if (stats.recentSessions.length > 100) {
-        stats.recentSessions = stats.recentSessions.slice(-100);
-      }
-    }
-
-    fs.writeFileSync(STATS_FILE, JSON.stringify(stats, null, 2) + "\n");
-  } catch { /* best effort */ }
-}
-
 // ─── Main ────────────────────────────────────────────────────────────────────
 const input = readHookInput();
 const prompt = input.user_prompt?.trim();
 if (!prompt) process.exit(0);
 
-spawnClaude(prompt, input.session_id || null);
-updateStats(input.session_id || null);
+spawnRunner(prompt, input.session_id || null);

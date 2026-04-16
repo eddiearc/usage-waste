@@ -82,8 +82,18 @@ node -e "
     process.exit(0);
   }
 
-  console.log('  Total calls: ' + (stats.totalCalls || 0));
+  const total = stats.totalCalls || 0;
+  const success = stats.successCalls || 0;
+  const failed = stats.failedCalls || 0;
+  const rate = total > 0 ? ((success / total) * 100).toFixed(1) + '%' : 'N/A';
+
+  console.log('  Total calls: ' + total + ' (success: ' + success + ', failed: ' + failed + ', rate: ' + rate + ')');
   console.log('  Last call:   ' + (stats.lastCall || 'never'));
+  console.log('  Last result: ' + (stats.lastResult || 'unknown'));
+
+  if (stats.lastError) {
+    console.log('  Last error:  ' + stats.lastError);
+  }
 
   if (stats.byModel && Object.keys(stats.byModel).length > 0) {
     console.log('  By model:');
@@ -93,7 +103,6 @@ node -e "
   }
 
   if (stats.byDate && Object.keys(stats.byDate).length > 0) {
-    // Show last 7 days
     const dates = Object.keys(stats.byDate).sort().slice(-7);
     console.log('  Recent days:');
     for (const d of dates) {
@@ -102,6 +111,15 @@ node -e "
   }
 
   console.log('  Sessions:    ' + (stats.recentSessions ? stats.recentSessions.length : 0));
+
+  const errors = stats.recentErrors || [];
+  if (errors.length > 0) {
+    console.log('');
+    console.log('  Recent errors (' + errors.length + '):');
+    for (const e of errors.slice(-5)) {
+      console.log('    [' + e.time + '] ' + e.error.slice(0, 120));
+    }
+  }
 " "$STATS_FILE"
 
 echo ""
