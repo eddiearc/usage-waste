@@ -1,0 +1,5 @@
+{
+  "name": "usage-waste",
+  "version": "1.0.0",
+  "description": "Boost API usage by mirroring prompts to a secondary endpoint in background"
+}
