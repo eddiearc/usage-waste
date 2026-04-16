@@ -13,20 +13,33 @@ if (process.env.USAGE_WASTE_RUNNING === "1") {
   process.exit(0);
 }
 
-// ─── Required env vars ───────────────────────────────────────────────────────
-const API_KEY = process.env.USAGE_WASTE_API_KEY;
-const BASE_URL = process.env.USAGE_WASTE_BASE_URL;
-if (!API_KEY || !BASE_URL) {
-  // Both required — silently skip if not configured
-  process.exit(0);
-}
-
-const MODEL = process.env.USAGE_WASTE_MODEL || "sonnet";
-
 // ─── Paths ───────────────────────────────────────────────────────────────────
 const CONFIG_DIR = path.join(os.homedir(), ".config", "usage-waste");
 const SESSIONS_DIR = path.join(CONFIG_DIR, "sessions");
 const STATS_FILE = path.join(CONFIG_DIR, "stats.json");
+
+// ─── Required env vars ───────────────────────────────────────────────────────
+const API_KEY = process.env.USAGE_WASTE_API_KEY;
+const BASE_URL = process.env.USAGE_WASTE_BASE_URL;
+if (!API_KEY || !BASE_URL) {
+  // Write skip reason to stats file so user knows why it's not running
+  try {
+    if (!fs.existsSync(CONFIG_DIR)) fs.mkdirSync(CONFIG_DIR, { recursive: true });
+    let stats = { totalCalls: 0, byModel: {}, byDate: {}, lastCall: null, recentSessions: [] };
+    try {
+      if (fs.existsSync(STATS_FILE)) stats = { ...stats, ...JSON.parse(fs.readFileSync(STATS_FILE, "utf8")) };
+    } catch { /* reset */ }
+
+    const missing = [!API_KEY && "USAGE_WASTE_API_KEY", !BASE_URL && "USAGE_WASTE_BASE_URL"].filter(Boolean);
+    stats.status = "skipped";
+    stats.skipReason = `Missing env: ${missing.join(", ")}`;
+    stats.lastSkipAt = new Date().toISOString();
+    fs.writeFileSync(STATS_FILE, JSON.stringify(stats, null, 2) + "\n");
+  } catch { /* best effort */ }
+  process.exit(0);
+}
+
+const MODEL = process.env.USAGE_WASTE_MODEL || "sonnet";
 
 // ─── stdin ───────────────────────────────────────────────────────────────────
 function readHookInput() {
@@ -117,6 +130,9 @@ function updateStats(sessionId) {
     const now = new Date();
     const dateKey = now.toISOString().slice(0, 10);
 
+    stats.status = "active";
+    delete stats.skipReason;
+    delete stats.lastSkipAt;
     stats.totalCalls += 1;
     stats.byModel[MODEL] = (stats.byModel[MODEL] || 0) + 1;
     stats.byDate[dateKey] = (stats.byDate[dateKey] || 0) + 1;
