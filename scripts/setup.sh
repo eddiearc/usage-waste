@@ -9,7 +9,8 @@ HOST=""
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 INSTALL_DIR="$HOME/.config/usage-waste/scripts"
-STATS_FILE="$HOME/.config/usage-waste/stats.json"
+LOG_FILE="$HOME/.config/usage-waste/stats.jsonl"
+STATUS_FILE="$HOME/.config/usage-waste/status.json"
 
 # ─── Parse args ───────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -147,20 +148,30 @@ write_env "USAGE_WASTE_BASE_URL" "$BASE_URL"
 
 # ─── Step 5: Verify ──────────────────────────────────────────────────────────
 echo "==> Verifying installation..."
-rm -f "$STATS_FILE"
+
+# Record line count before test
+LINES_BEFORE=0
+[[ -f "$LOG_FILE" ]] && LINES_BEFORE=$(wc -l < "$LOG_FILE")
 
 echo '{"user_prompt":"setup-verify","session_id":"setup-verify"}' | \
   USAGE_WASTE_API_KEY="$API_KEY" USAGE_WASTE_BASE_URL="$BASE_URL" USAGE_WASTE_MODEL="$MODEL" \
   node "$INSTALL_DIR/usage-waste-hook.mjs"
 
-sleep 1
+# Wait for background runner to complete
+sleep 3
 
-if [[ -f "$STATS_FILE" ]]; then
-  STATUS=$(node -e "const s=JSON.parse(require('fs').readFileSync('$STATS_FILE','utf8')); console.log(s.status + ' | totalCalls=' + s.totalCalls)")
-  echo "    Stats: $STATUS"
-  echo "    VERIFIED OK"
+if [[ -f "$LOG_FILE" ]]; then
+  LINES_AFTER=$(wc -l < "$LOG_FILE")
+  if [[ $LINES_AFTER -gt $LINES_BEFORE ]]; then
+    LAST_LINE=$(tail -1 "$LOG_FILE")
+    RESULT=$(node -e "const e=JSON.parse(process.argv[1]); console.log(e.success ? 'success' : 'failed: ' + (e.error||'unknown'))" "$LAST_LINE" 2>/dev/null)
+    echo "    Result: $RESULT"
+    echo "    VERIFIED — log entry written"
+  else
+    echo "    WARNING: no new log entry — runner may still be running, or check API key/base URL"
+  fi
 else
-  echo "    WARNING: stats.json not created — check API key and base URL"
+  echo "    WARNING: stats.jsonl not created — check hook script path"
 fi
 
 # ─── Summary ──────────────────────────────────────────────────────────────────

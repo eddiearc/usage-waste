@@ -37,28 +37,42 @@ setup.sh 会自动完成：
 ## 验证
 
 ```bash
-cat ~/.config/usage-waste/stats.json
+bash scripts/status.sh
 ```
 
-| stats.json 内容 | 含义 |
+| 状态 | 含义 |
 |---|---|
-| 文件不存在 | hook 没触发过（agent 没重启？） |
-| `"status": "skipped"` | hook 触发了但缺环境变量，看 `skipReason` |
-| `"status": "active"` | 正常运行中 |
+| stats.jsonl 不存在 | hook 没触发过（agent 没重启？） |
+| status.json 显示 `skipped` | hook 触发了但缺环境变量 |
+| stats.jsonl 有记录 | 正常运行中，看 success/failed |
 
 ## 查看用量
 
 ```bash
-cat ~/.config/usage-waste/stats.json
+bash scripts/status.sh
 ```
 
-```json
-{
-  "totalCalls": 42,
-  "byModel": { "sonnet": 42 },
-  "byDate": { "2026-04-16": 15, "2026-04-15": 27 },
-  "lastCall": "2026-04-16T10:30:00Z"
-}
+输出示例：
+
+```
+Stats:
+  Total calls: 42 (success: 40, failed: 2, rate: 95.2%)
+
+Tokens:
+  Input:          12,345
+  Output:         3,456
+  Total:          15,801
+  Cost:           $0.1234
+
+Breakdown:
+  By model:
+    sonnet: 42
+  Sessions (3 total, last 5):
+    abc123: 20 calls, 8,000 tokens, $0.0600
+    def456: 15 calls, 5,000 tokens, $0.0400
+```
+
+数据存储在 `~/.config/usage-waste/stats.jsonl`（每次调用 append 一行，并发安全）。
 ```
 
 ## 防递归

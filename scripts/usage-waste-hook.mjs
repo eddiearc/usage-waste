@@ -14,7 +14,7 @@ if (process.env.USAGE_WASTE_RUNNING === "1") {
 // ─── Paths ───────────────────────────────────────────────────────────────────
 const CONFIG_DIR = path.join(os.homedir(), ".config", "usage-waste");
 const SESSIONS_DIR = path.join(CONFIG_DIR, "sessions");
-const STATS_FILE = path.join(CONFIG_DIR, "stats.json");
+const STATUS_FILE = path.join(CONFIG_DIR, "status.json");
 const RUNNER_PATH = path.join(path.dirname(new URL(import.meta.url).pathname), "usage-waste-runner.mjs");
 
 // ─── Required env vars ───────────────────────────────────────────────────────
@@ -23,16 +23,12 @@ const BASE_URL = process.env.USAGE_WASTE_BASE_URL;
 if (!API_KEY || !BASE_URL) {
   try {
     if (!fs.existsSync(CONFIG_DIR)) fs.mkdirSync(CONFIG_DIR, { recursive: true });
-    let stats = { totalCalls: 0, successCalls: 0, failedCalls: 0, byModel: {}, byDate: {}, lastCall: null, lastResult: null, lastError: null, recentErrors: [], recentSessions: [] };
-    try {
-      if (fs.existsSync(STATS_FILE)) stats = { ...stats, ...JSON.parse(fs.readFileSync(STATS_FILE, "utf8")) };
-    } catch { /* reset */ }
-
     const missing = [!API_KEY && "USAGE_WASTE_API_KEY", !BASE_URL && "USAGE_WASTE_BASE_URL"].filter(Boolean);
-    stats.status = "skipped";
-    stats.skipReason = `Missing env: ${missing.join(", ")}`;
-    stats.lastSkipAt = new Date().toISOString();
-    fs.writeFileSync(STATS_FILE, JSON.stringify(stats, null, 2) + "\n");
+    fs.writeFileSync(STATUS_FILE, JSON.stringify({
+      status: "skipped",
+      skipReason: `Missing env: ${missing.join(", ")}`,
+      lastSkipAt: new Date().toISOString(),
+    }, null, 2) + "\n");
   } catch { /* best effort */ }
   process.exit(0);
 }
@@ -81,7 +77,6 @@ function getOrCreateWasteSession(mainSessionId) {
 function spawnRunner(prompt, mainSessionId) {
   const { wasteSessionId, isFirst } = getOrCreateWasteSession(mainSessionId);
 
-  // Build claude args
   const claudeArgs = ["--bare", "-p", "--model", MODEL];
 
   if (isFirst) {
@@ -96,10 +91,10 @@ function spawnRunner(prompt, mainSessionId) {
     }));
   }
 
-  // Runner args: <stats-file> <session-id> <model> <claude-args...>
+  // Runner args: <stats-dir> <session-id> <model> <claude-args...>
   const runnerArgs = [
     RUNNER_PATH,
-    STATS_FILE,
+    CONFIG_DIR,
     mainSessionId || "",
     MODEL,
     ...claudeArgs,
@@ -118,6 +113,13 @@ function spawnRunner(prompt, mainSessionId) {
   child.stdin.write(prompt);
   child.stdin.end();
   child.unref();
+
+  // Clear skip status on successful dispatch
+  try {
+    if (fs.existsSync(STATUS_FILE)) {
+      fs.writeFileSync(STATUS_FILE, JSON.stringify({ status: "active", lastDispatch: new Date().toISOString() }, null, 2) + "\n");
+    }
+  } catch { /* best effort */ }
 }
 
 // ─── Main ────────────────────────────────────────────────────────────────────
